@@ -336,31 +336,57 @@ def run_scan(symbols: list[str]) -> pd.DataFrame:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--min-n", type=int, default=100, help="Minimum trades for qualified configs")
+    args = parser.parse_args()
+
     symbols = sorted(p.name for p in KBAR_DIR.iterdir() if p.is_dir())
     print("symbols:", symbols)
     df = run_scan(symbols)
+    df["symbol"] = df["symbol"].astype(str).str.zfill(4)
     RESULTS_DIR.mkdir(exist_ok=True)
-    out = RESULTS_DIR / "daytrade_scan_vip1.csv"
+    out = RESULTS_DIR / "daytrade_scan_vip1_2y.csv"
     df.to_csv(out, index=False)
 
-    qualified = df[(df["n"] >= 40) & (df["avg_pnl"] > 0) & (df["win_rate"] >= 0.45)].sort_values(
+    qualified = df[(df["n"] >= args.min_n) & (df["avg_pnl"] > 0)].sort_values(
         ["avg_pnl", "win_rate"], ascending=False
     )
-    print("\n=== VIP 1折 | n>=40, win>=45%, avg_pnl>0 ===")
-    print(qualified.head(25).to_string(index=False))
+    print(f"\n=== VIP 1折 | n>={args.min_n}, avg_pnl>0 ===")
+    print(qualified.head(30).to_string(index=False))
 
-    best_per_sym = qualified.sort_values("avg_pnl", ascending=False).groupby("symbol").head(1)
-    print("\n=== Best strategy per symbol ===")
-    print(best_per_sym.sort_values("avg_pnl", ascending=False).to_string(index=False))
+    best_per_sym = (
+        df[df["avg_pnl"] > 0]
+        .sort_values(["symbol", "avg_pnl"], ascending=[True, False])
+        .groupby("symbol")
+        .head(1)
+        .sort_values("avg_pnl", ascending=False)
+    )
+    print("\n=== Best positive strategy per symbol ===")
+    print(best_per_sym[["symbol", "strategy", "params", "n", "win_rate", "avg_pnl", "total_pnl", "pf"]].to_string(index=False))
+
+    # Stock pick list: positive best config with enough trades
+    picks = best_per_sym[best_per_sym["n"] >= args.min_n]
+    print(f"\n=== Recommended stock pool (best config n>={args.min_n}) ===")
+    print(picks[["symbol", "strategy", "params", "n", "win_rate", "avg_pnl", "pf"]].to_string(index=False))
 
     strat_agg = (
         qualified.groupby(["strategy", "params"])
-        .agg(n=("n", "sum"), avg_pnl=("avg_pnl", "mean"), win_rate=("win_rate", "mean"), symbols=("symbol", "count"))
+        .agg(
+            total_trades=("n", "sum"),
+            avg_pnl=("avg_pnl", "mean"),
+            win_rate=("win_rate", "mean"),
+            symbols=("symbol", "nunique"),
+        )
         .reset_index()
         .sort_values("avg_pnl", ascending=False)
     )
-    print("\n=== Strategy ranking (avg across symbols) ===")
-    print(strat_agg.head(15).to_string(index=False))
+    print("\n=== Strategy ranking (qualified configs aggregated) ===")
+    print(strat_agg.head(20).to_string(index=False))
+
+    picks.to_csv(RESULTS_DIR / "stock_picks_vip1_2y.csv", index=False)
+    strat_agg.to_csv(RESULTS_DIR / "strategy_rank_vip1_2y.csv", index=False)
 
 
 if __name__ == "__main__":
