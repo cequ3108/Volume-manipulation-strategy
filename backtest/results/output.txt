@@ -1,0 +1,40 @@
+Loaded 24563 bars, 119 trading days
+
+=== Breakeven ticks (bond ETF 0% tax) ===
+  fee_profile  round_trip_cost_pct  ticks_to_breakeven@31.73  min_spread@31.73
+standard_1425              0.28500                  9.410700          0.094107
+       vip_3折              0.08550                  2.823210          0.028232
+       vip_1折              0.02850                  0.941070          0.009411
+      vip_05折              0.01425                  0.470535          0.004705
+   vip_0手續+全退              0.00000                  0.000000          0.000000
+
+=== Top positive-expectancy configs (n>=30) ===
+        strategy            param fee_profile    n  win_rate  avg_pnl  total_pnl  median_pnl  profit_factor
+mean_revert_band lb=30,band=3tick  vip_0手續+全退   43  0.511628 0.000276   0.011852    0.000303       1.723934
+mean_revert_band lb=20,band=3tick  vip_0手續+全退   37  0.513514 0.000276   0.010197    0.000608       1.687393
+mean_revert_band lb=30,band=2tick  vip_0手續+全退  107  0.560748 0.000249   0.026676    0.000302       1.869411
+       mm_spread     spread=1tick  vip_0手續+全退 1215  0.923457 0.000213   0.258842    0.000303       3.149302
+       mm_spread     spread=2tick  vip_0手續+全退  361  0.736842 0.000201   0.072704    0.000605       1.593203
+       mm_spread     spread=5tick  vip_0手續+全退  201  0.572139 0.000197   0.039552    0.000598       1.358027
+       mm_spread     spread=3tick  vip_0手續+全退  273  0.677656 0.000188   0.051387    0.000898       1.440006
+       mm_spread     spread=4tick  vip_0手續+全退  224  0.611607 0.000182   0.040847    0.000916       1.368683
+mean_revert_band lb=20,band=2tick  vip_0手續+全退  103  0.533981 0.000180   0.018505    0.000301       1.602180
+     vwap_revert         z=0.0015  vip_0手續+全退   64  0.578125 0.000166   0.010638    0.000448       1.393871
+     vwap_revert         z=0.0005  vip_0手續+全退  396  0.681818 0.000153   0.060540    0.000594       1.537517
+mean_revert_band lb=30,band=3tick     vip_05折   43  0.511628 0.000133   0.005725    0.000161       1.295636
+mean_revert_band lb=20,band=3tick     vip_05折   37  0.513514 0.000133   0.004924    0.000465       1.283014
+     vwap_revert         z=0.0015     vip_05折   64  0.656250 0.000113   0.007218    0.000447       1.267242
+mean_revert_band lb=10,band=2tick  vip_0手續+全退   70  0.528571 0.000112   0.007827    0.000301       1.242285
+mean_revert_band lb=30,band=2tick     vip_05折  107  0.560748 0.000107   0.011428    0.000159       1.305731
+     vwap_revert         z=0.0010  vip_0手續+全退  145  0.593103 0.000100   0.014546    0.000595       1.244662
+       mm_spread     spread=1tick     vip_05折 1215  0.923457 0.000071   0.085704    0.000160       1.641101
+             orb          orb=30m  vip_0手續+全退  126  0.468254 0.000070   0.008877    0.000000       1.141037
+             orb          orb=15m  vip_0手續+全退  158  0.424051 0.000069   0.010974    0.000000       1.129055
+
+=== Best mm_spread per fee profile ===
+ strategy        param   fee_profile    n  win_rate   avg_pnl  total_pnl  median_pnl  profit_factor
+mm_spread spread=1tick standard_1425 1215  0.000000 -0.002637  -3.203908   -0.002547       0.000000
+mm_spread spread=1tick       vip_05折 1215  0.923457  0.000071   0.085704    0.000160       1.641101
+mm_spread spread=1tick    vip_0手續+全退 1215  0.923457  0.000213   0.258842    0.000303       3.149302
+mm_spread spread=1tick        vip_1折 1215  0.923457 -0.000072  -0.087433    0.000018       0.404956
+mm_spread spread=1tick        vip_3折 1215  0.013992 -0.000642  -0.779983   -0.000552       0.005593
