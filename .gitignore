@@ -1,0 +1,6 @@
+backtest/data/broker_flow/cache_daily/
+backtest/data/broker_flow/*.parquet
+
+# chip data package local caches
+tw_broker_chip_data/state/stock_universe.csv
+tw_broker_chip_data/.venv/
