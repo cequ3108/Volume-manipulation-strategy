@@ -42,6 +42,36 @@ MEGA_KEYWORDS = (
     "元大證券股份有限公司",  # rare full legal name if appears
 )
 
+# Brand-only HQ desks (no geographic branch suffix).
+HQ_EXACT = {
+    "凱基",
+    "元大",
+    "富邦",
+    "群益",
+    "永豐金",
+    "統一",
+    "中國信託",
+    "中國信託證",
+    "華南永昌",
+    "宏遠",
+    "康和",
+    "兆豐",
+    "臺銀",
+    "台銀",
+    "國票",
+    "玉山",
+    "第一金",
+    "第一金證",
+    "第一金證券",
+    "元富",
+    "日盛",
+    "亞東",
+    "土銀",
+    "合庫",
+    "台新",
+}
+ELEC_KW = ("匯立", "網路", "電子", "複委託", "法人", "自營", "興櫃", "總公司", "環球")
+
 
 def api_get(path: str, params: dict, retries: int = 5) -> dict:
     params = {**params, "token": TOKEN}
@@ -157,6 +187,15 @@ def is_mega(name: str) -> bool:
     return any(k in name for k in MEGA_KEYWORDS)
 
 
+def branch_type(name: str) -> str:
+    n = str(name)
+    if is_mega(n) or any(k in n for k in ELEC_KW):
+        return "electronic"
+    if n in HQ_EXACT or len(n) <= 3:
+        return "hq"
+    return "local"
+
+
 def score_pairs(df: pd.DataFrame, min_net_shares: int = 80_000) -> pd.DataFrame:
     """min_net_shares in 股; UI 張 = /1000."""
     if df.empty:
@@ -178,7 +217,7 @@ def score_pairs(df: pd.DataFrame, min_net_shares: int = 80_000) -> pd.DataFrame:
         buy_ratio = buy / total
         active = g[(g["buy"] > 0) | (g["sell"] > 0)]
         n_days = len(active)
-        if n_days < 15:
+        if n_days < 20:
             continue
         buy_days = int((active["buy"] > 0).sum())
         sell_days = int((active["sell"] > 0).sum())
@@ -190,28 +229,42 @@ def score_pairs(df: pd.DataFrame, min_net_shares: int = 80_000) -> pd.DataFrame:
             continue
         hold_ratio = cum_end / cum_max  # 1 = never gave back peak inventory
         peak_day_share = float(net_series.max() / net) if net > 0 else 1.0
+        if peak_day_share > 0.55:
+            continue
         avg_buy = float(g["buy_amt"].sum() / buy) if buy else 0.0
         avg_sell = float(g["sell_amt"].sum() / sell) if sell else 0.0
         spread = (avg_sell / avg_buy - 1.0) if avg_buy > 0 and sell > 0 else 0.0
 
+        btype = branch_type(str(bname))
+        mega = is_mega(str(bname))
         # Silent accumulation: persistent net buy, little dumping, hold through period.
         score = 0.0
-        score += min(net / 1_000_000.0, 5.0) * 20  # size
-        score += buy_ratio * 35
-        score += min(n_days / 80.0, 1.0) * 20
-        score += hold_ratio * 25
-        score -= min(max(peak_day_share - 0.25, 0.0), 0.75) * 30  # penalize one-day spike
+        score += min(net / 500_000.0, 4.0) * 15
+        score += buy_ratio * 40
+        score += min(n_days / 90.0, 1.0) * 20
+        score += hold_ratio * 30
+        score -= min(max(peak_day_share - 0.2, 0.0), 0.8) * 35
         if sell > 0 and spread > 0:
-            score += min(spread, 0.15) * 40
-        mega = is_mega(str(bname))
+            score += min(spread, 0.2) * 50
+        if btype == "local":
+            score += 25
+        elif btype == "hq":
+            score *= 0.45
+        elif btype == "electronic":
+            score *= 0.35
         if mega:
-            score *= 0.55  # still keep but demote vs local branches
+            score *= 0.4
+        if buy_ratio >= 0.72:
+            score += 10
+        if hold_ratio >= 0.90:
+            score += 8
 
         rows.append(
             {
                 "stock_id": sid,
                 "securities_trader_id": bid,
                 "securities_trader": bname,
+                "branch_type": btype,
                 "mega_desk": mega,
                 "buy_shares": buy,
                 "sell_shares": sell,
