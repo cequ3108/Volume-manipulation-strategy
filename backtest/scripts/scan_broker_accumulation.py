@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scan Taiwan broker-branch silent accumulation patterns (分點吃貨)."""
+"""Scan Taiwan broker-branch silent accumulation (分點默默吃貨)."""
 
 from __future__ import annotations
 
@@ -17,58 +17,15 @@ TOKEN = os.environ.get("FINMIND_TOKEN", "")
 BASE = "https://api.finmindtrade.com/api/v4"
 OUT_DIR = Path("/workspace/backtest/data/broker_flow")
 
-# Typical electronic / foreign desks — still reported, but tagged separately.
 MEGA_KEYWORDS = (
-    "台灣匯立",
-    "美林",
-    "摩根",
-    "高盛",
-    "大和國泰",
-    "港商",
-    "瑞銀",
-    "花旗",
-    "法銀",
-    "匯豐",
-    "巴克萊",
-    "新加坡商",
-    "香港商",
-    "瑞士商",
-    "美商",
-    "日商",
-    "德商",
-    "法商",
-    "英商",
-    "麥格理",
-    "元大證券股份有限公司",  # rare full legal name if appears
+    "台灣匯立", "美林", "摩根", "高盛", "大和國泰", "港商", "瑞銀", "花旗",
+    "法銀", "匯豐", "巴克萊", "新加坡商", "香港商", "瑞士商", "美商",
+    "日商", "德商", "法商", "英商", "麥格理",
 )
-
-# Brand-only HQ desks (no geographic branch suffix).
 HQ_EXACT = {
-    "凱基",
-    "元大",
-    "富邦",
-    "群益",
-    "永豐金",
-    "統一",
-    "中國信託",
-    "中國信託證",
-    "華南永昌",
-    "宏遠",
-    "康和",
-    "兆豐",
-    "臺銀",
-    "台銀",
-    "國票",
-    "玉山",
-    "第一金",
-    "第一金證",
-    "第一金證券",
-    "元富",
-    "日盛",
-    "亞東",
-    "土銀",
-    "合庫",
-    "台新",
+    "凱基", "元大", "富邦", "群益", "永豐金", "統一", "中國信託", "中國信託證",
+    "華南永昌", "宏遠", "康和", "兆豐", "臺銀", "台銀", "國票", "玉山",
+    "第一金", "第一金證", "第一金證券", "元富", "日盛", "亞東", "土銀", "合庫", "台新",
 }
 ELEC_KW = ("匯立", "網路", "電子", "複委託", "法人", "自營", "興櫃", "總公司", "環球")
 
@@ -87,7 +44,7 @@ def api_get(path: str, params: dict, retries: int = 5) -> dict:
                 continue
             j = r.json()
             if r.status_code != 200:
-                raise RuntimeError(f"{path} {params} -> {r.status_code} {j}")
+                raise RuntimeError(f"{path} -> {r.status_code} {j}")
             return j
         except Exception as e:
             last = e
@@ -96,15 +53,12 @@ def api_get(path: str, params: dict, retries: int = 5) -> dict:
 
 
 def trading_dates(stock_id: str, start: str, end: str) -> list[str]:
-    j = api_get(
-        "/data",
-        {
-            "dataset": "TaiwanStockPrice",
-            "data_id": stock_id,
-            "start_date": start,
-            "end_date": end,
-        },
-    )
+    j = api_get("/data", {
+        "dataset": "TaiwanStockPrice",
+        "data_id": stock_id,
+        "start_date": start,
+        "end_date": end,
+    })
     return [row["date"] for row in j.get("data", [])]
 
 
@@ -120,41 +74,24 @@ def stock_info_map() -> dict[str, str]:
 
 
 def fetch_day_agg(stock_id: str, date: str) -> pd.DataFrame:
-    j = api_get(
-        "/taiwan_stock_trading_daily_report",
-        {"data_id": stock_id, "date": date},
-    )
+    j = api_get("/taiwan_stock_trading_daily_report", {"data_id": stock_id, "date": date})
     data = j.get("data") or []
+    cols = ["date", "stock_id", "securities_trader_id", "securities_trader", "buy", "sell", "buy_amt", "sell_amt"]
     if not data:
-        return pd.DataFrame(
-            columns=[
-                "date",
-                "stock_id",
-                "securities_trader_id",
-                "securities_trader",
-                "buy",
-                "sell",
-                "buy_amt",
-                "sell_amt",
-            ]
-        )
+        return pd.DataFrame(columns=cols)
     df = pd.DataFrame(data)
     df["buy_amt"] = df["buy"] * df["price"]
     df["sell_amt"] = df["sell"] * df["price"]
-    g = (
-        df.groupby(["date", "stock_id", "securities_trader_id", "securities_trader"], as_index=False)
-        .agg(buy=("buy", "sum"), sell=("sell", "sum"), buy_amt=("buy_amt", "sum"), sell_amt=("sell_amt", "sum"))
-    )
-    return g
+    return df.groupby(
+        ["date", "stock_id", "securities_trader_id", "securities_trader"], as_index=False
+    ).agg(buy=("buy", "sum"), sell=("sell", "sum"), buy_amt=("buy_amt", "sum"), sell_amt=("sell_amt", "sum"))
 
 
-def load_or_build_stock_daily(
-    stock_id: str, dates: list[str], cache_dir: Path, max_workers: int = 6
-) -> pd.DataFrame:
+def load_or_build_stock_daily(stock_id: str, dates: list[str], cache_dir: Path, max_workers: int = 6) -> pd.DataFrame:
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / f"{stock_id}_daily_branch.parquet"
+    frames = []
     have = set()
-    frames: list[pd.DataFrame] = []
     if cache_path.exists():
         old = pd.read_parquet(cache_path)
         frames.append(old)
@@ -162,12 +99,8 @@ def load_or_build_stock_daily(
     missing = [d for d in dates if d not in have]
     if missing:
         print(f"  {stock_id}: fetch {len(missing)}/{len(dates)} days", flush=True)
-
-        def one(d: str) -> pd.DataFrame:
-            return fetch_day_agg(stock_id, d)
-
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            futs = {ex.submit(one, d): d for d in missing}
+            futs = {ex.submit(fetch_day_agg, stock_id, d): d for d in missing}
             for fut in as_completed(futs):
                 d = futs[fut]
                 try:
@@ -175,9 +108,7 @@ def load_or_build_stock_daily(
                 except Exception as e:
                     print(f"    fail {stock_id} {d}: {e}", flush=True)
         out = pd.concat([f for f in frames if f is not None and len(f)], ignore_index=True)
-        out = out.drop_duplicates(
-            subset=["date", "stock_id", "securities_trader_id"], keep="last"
-        )
+        out = out.drop_duplicates(subset=["date", "stock_id", "securities_trader_id"], keep="last")
         out.to_parquet(cache_path, index=False)
         return out
     return frames[0]
@@ -196,15 +127,11 @@ def branch_type(name: str) -> str:
     return "local"
 
 
-def score_pairs(df: pd.DataFrame, min_net_shares: int = 80_000) -> pd.DataFrame:
-    """min_net_shares in 股; UI 張 = /1000."""
+def score_pairs(df: pd.DataFrame, min_net_shares: int = 50_000) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
-
     rows = []
-    for (sid, bid, bname), g in df.groupby(
-        ["stock_id", "securities_trader_id", "securities_trader"]
-    ):
+    for (sid, bid, bname), g in df.groupby(["stock_id", "securities_trader_id", "securities_trader"]):
         g = g.sort_values("date")
         buy = float(g["buy"].sum())
         sell = float(g["sell"].sum())
@@ -227,17 +154,15 @@ def score_pairs(df: pd.DataFrame, min_net_shares: int = 80_000) -> pd.DataFrame:
         cum_max = float(cum.max())
         if cum_max <= 0:
             continue
-        hold_ratio = cum_end / cum_max  # 1 = never gave back peak inventory
+        hold_ratio = cum_end / cum_max
         peak_day_share = float(net_series.max() / net) if net > 0 else 1.0
         if peak_day_share > 0.55:
             continue
         avg_buy = float(g["buy_amt"].sum() / buy) if buy else 0.0
         avg_sell = float(g["sell_amt"].sum() / sell) if sell else 0.0
         spread = (avg_sell / avg_buy - 1.0) if avg_buy > 0 and sell > 0 else 0.0
-
         btype = branch_type(str(bname))
         mega = is_mega(str(bname))
-        # Silent accumulation: persistent net buy, little dumping, hold through period.
         score = 0.0
         score += min(net / 500_000.0, 4.0) * 15
         score += buy_ratio * 40
@@ -250,7 +175,7 @@ def score_pairs(df: pd.DataFrame, min_net_shares: int = 80_000) -> pd.DataFrame:
             score += 25
         elif btype == "hq":
             score *= 0.45
-        elif btype == "electronic":
+        else:
             score *= 0.35
         if mega:
             score *= 0.4
@@ -258,32 +183,29 @@ def score_pairs(df: pd.DataFrame, min_net_shares: int = 80_000) -> pd.DataFrame:
             score += 10
         if hold_ratio >= 0.90:
             score += 8
-
-        rows.append(
-            {
-                "stock_id": sid,
-                "securities_trader_id": bid,
-                "securities_trader": bname,
-                "branch_type": btype,
-                "mega_desk": mega,
-                "buy_shares": buy,
-                "sell_shares": sell,
-                "net_shares": net,
-                "buy_lots": buy / 1000.0,
-                "sell_lots": sell / 1000.0,
-                "net_lots": net / 1000.0,
-                "buy_ratio": buy_ratio,
-                "active_days": n_days,
-                "buy_days": buy_days,
-                "sell_days": sell_days,
-                "hold_ratio": hold_ratio,
-                "peak_day_share": peak_day_share,
-                "avg_buy": avg_buy,
-                "avg_sell": avg_sell,
-                "spread": spread,
-                "score": score,
-            }
-        )
+        rows.append({
+            "stock_id": sid,
+            "securities_trader_id": bid,
+            "securities_trader": bname,
+            "branch_type": btype,
+            "mega_desk": mega,
+            "buy_shares": buy,
+            "sell_shares": sell,
+            "net_shares": net,
+            "buy_lots": buy / 1000.0,
+            "sell_lots": sell / 1000.0,
+            "net_lots": net / 1000.0,
+            "buy_ratio": buy_ratio,
+            "active_days": n_days,
+            "buy_days": buy_days,
+            "sell_days": sell_days,
+            "hold_ratio": hold_ratio,
+            "peak_day_share": peak_day_share,
+            "avg_buy": avg_buy,
+            "avg_sell": avg_sell,
+            "spread": spread,
+            "score": score,
+        })
     if not rows:
         return pd.DataFrame()
     return pd.DataFrame(rows).sort_values("score", ascending=False)
@@ -295,7 +217,6 @@ def default_universe() -> list[str]:
     if path.exists():
         ids = pd.read_csv(path)["stock_id"].astype(str).tolist()[:40]
     extras = ["2330", "2454", "2317", "2382", "2308", "3034", "3711", "6669", "3443", "3653"]
-    # keep order unique
     out = []
     for x in ids + extras + ["3008"]:
         if x not in out:
@@ -308,7 +229,7 @@ def main() -> None:
     ap.add_argument("--start", default="2026-04-10")
     ap.add_argument("--end", default="2026-09-04")
     ap.add_argument("--stocks", default="")
-    ap.add_argument("--min-net-lots", type=float, default=80.0, help="min net buy in 張")
+    ap.add_argument("--min-net-lots", type=float, default=50.0)
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--top", type=int, default=40)
     args = ap.parse_args()
@@ -324,7 +245,7 @@ def main() -> None:
     cache_dir = OUT_DIR / "cache_daily"
     all_daily = []
     for i, sid in enumerate(stocks, 1):
-        print(f"[{i}/{len(stocks)}] {sid} {names.get(sid,'')}", flush=True)
+        print(f"[{i}/{len(stocks)}] {sid} {names.get(sid, '')}", flush=True)
         try:
             df = load_or_build_stock_daily(sid, dates, cache_dir, max_workers=args.workers)
             all_daily.append(df)
@@ -346,43 +267,43 @@ def main() -> None:
 
     out_csv = OUT_DIR / f"accumulation_scan_{args.start}_{args.end}.csv"
     scored.to_csv(out_csv, index=False)
-    local = scored[~scored["mega_desk"]].head(args.top)
-    mega = scored[scored["mega_desk"]].head(15)
+    local = scored[scored["branch_type"] == "local"].head(args.top)
+    quiet = scored[
+        (scored["branch_type"] == "local")
+        & (scored["buy_ratio"] >= 0.72)
+        & (scored["hold_ratio"] >= 0.85)
+        & (scored["active_days"] >= 60)
+        & (scored["net_lots"] >= 200)
+    ].head(args.top)
     local_csv = OUT_DIR / f"accumulation_local_top_{args.start}_{args.end}.csv"
+    quiet_csv = OUT_DIR / "quiet_accumulation_like_sanduo.csv"
     local.to_csv(local_csv, index=False)
+    quiet.to_csv(quiet_csv, index=False)
 
     summary = {
         "period": [args.start, args.end],
         "stocks_scanned": stocks,
         "pairs_total": int(len(scored)),
         "local_top_path": str(local_csv),
+        "quiet_path": str(quiet_csv),
         "all_path": str(out_csv),
+        "quiet_top": quiet.head(25).to_dict(orient="records"),
         "local_top": local.head(25).to_dict(orient="records"),
-        "mega_top": mega.head(10).to_dict(orient="records"),
         "kgi_sanduo_3008": scored[
-            (scored["securities_trader_id"] == "9275") & (scored["stock_id"] == "3008")
+            (scored["securities_trader_id"].astype(str) == "9275")
+            & (scored["stock_id"].astype(str) == "3008")
         ].to_dict(orient="records"),
     }
     summary_path = OUT_DIR / f"accumulation_summary_{args.start}_{args.end}.json"
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"saved {out_csv}", flush=True)
     print(f"saved {local_csv}", flush=True)
+    print(f"saved {quiet_csv}", flush=True)
     print(f"saved {summary_path}", flush=True)
-    print("\n=== LOCAL TOP 20 ===", flush=True)
-    cols = [
-        "score",
-        "stock_id",
-        "stock_name",
-        "securities_trader",
-        "securities_trader_id",
-        "net_lots",
-        "buy_ratio",
-        "active_days",
-        "hold_ratio",
-        "avg_buy",
-        "avg_sell",
-    ]
-    print(local[cols].head(20).to_string(index=False), flush=True)
+    cols = ["score", "stock_id", "stock_name", "securities_trader", "securities_trader_id",
+            "net_lots", "buy_ratio", "active_days", "hold_ratio", "avg_buy", "avg_sell"]
+    print("\n=== QUIET LOCAL TOP ===", flush=True)
+    print(quiet[cols].head(20).to_string(index=False), flush=True)
     if summary["kgi_sanduo_3008"]:
         print("\n=== 凱基三多/大立光 benchmark ===", flush=True)
         print(pd.DataFrame(summary["kgi_sanduo_3008"])[cols].to_string(index=False), flush=True)
