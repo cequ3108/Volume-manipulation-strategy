@@ -1,0 +1,82 @@
+name: Daily broker chip ingest
+
+on:
+  schedule:
+    # 21:15 Asia/Taipei = 13:15 UTC (Taiwan has no DST)
+    - cron: "15 13 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "auto | daily | backfill"
+        required: false
+        default: "auto"
+      max_requests:
+        description: "Max FinMind requests for this run"
+        required: false
+        default: "500"
+
+concurrency:
+  group: chip-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Fetch chip data
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+          FINMIND_MAX_REQ_PER_HOUR: "520"
+          FINMIND_RUN_MAX_REQUESTS: ${{ github.event.inputs.max_requests || '500' }}
+        run: |
+          MODE="${{ github.event.inputs.mode || 'auto' }}"
+          python scripts/fetch_branch_daily.py --mode "$MODE" --max-requests "${FINMIND_RUN_MAX_REQUESTS}"
+
+      - name: Commit & push
+        run: |
+          git config user.name "chip-bot"
+          git config user.email "chip-bot@users.noreply.github.com"
+          git add data/daily state .gitattributes || true
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git commit -m "chore(data): update broker chip $(date -u +%Y-%m-%dT%H%MZ)"
+          git push
+
+      - name: Report unfinished work
+        if: success()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("state/checkpoint.json")
+          if not p.exists():
+              print("no checkpoint")
+              raise SystemExit(0)
+          st = json.loads(p.read_text())
+          pending = st.get("pending_dates") or []
+          inprog = st.get("in_progress_date")
+          need = bool(inprog) or bool(pending)
+          print("needs_resume=", need, "in_progress=", inprog, "pending=", len(pending))
+          if need:
+              print("Re-run this workflow later (or let the Cursor agent resume) after FinMind hourly quota recovers.")
+          PY
