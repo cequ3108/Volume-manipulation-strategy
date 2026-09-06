@@ -78,5 +78,5 @@ jobs:
           need = bool(inprog) or bool(pending)
           print("needs_resume=", need, "in_progress=", inprog, "pending=", len(pending))
           if need:
-              print("Re-run this workflow later (or let the Cursor agent resume) after FinMind hourly quota recovers.")
+              print("Re-run later after FinMind hourly quota recovers (Cursor agent or workflow_dispatch).")
           PY
